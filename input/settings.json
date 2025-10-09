@@ -1,0 +1,9 @@
+{
+    "pn_loc":"C3",
+    "date_loc":"E5",
+    "cart_loc":"C5",
+    "dn_loc":"E4",
+    "offsets": [7, 35, 64, 92],
+    "shelf_count": 4,
+    "serial_length": 13
+}

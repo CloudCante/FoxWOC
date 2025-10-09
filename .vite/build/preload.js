@@ -1,0 +1,1 @@
+"use strict";const{contextBridge:o,ipcRenderer:e}=require("electron");o.exposeInMainWorld("electronAPI",{loadApprovedSerials:()=>e.invoke("load-approved-serials"),readTemplateFile:()=>e.invoke("load-output-template")});
