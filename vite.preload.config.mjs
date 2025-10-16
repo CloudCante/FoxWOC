@@ -4,7 +4,7 @@ export default defineConfig({
     target: 'node18',
     rollupOptions: {
       output: { entryFileNames: 'preload.js' },
-      external: ['electron','fs','path','xlsx','node:fs','node:path']
+      external: ['electron','fs','path','node:fs','node:path']
     }
   }
 });

@@ -1,10 +1,14 @@
 // forge.config.js
 const { VitePlugin } = require('@electron-forge/plugin-vite');
+const path = require('path');
 
 const makers =
   process.platform === 'win32'
     ? [
-        { name: '@electron-forge/maker-squirrel', config: {} },
+        { name: '@electron-forge/maker-squirrel',
+           config: {
+            setupIcon: path.resolve(__dirname,'assets/app.ico')
+           } },
       ]
     : process.platform === 'darwin'
     ? [
@@ -17,7 +21,10 @@ const makers =
       ];
 
 module.exports = {
-  packagerConfig: { asar: { unpackDir: "input/**" }, extraResource: ["input"] },
+  packagerConfig: { 
+    asar:  true, 
+    icon: path.resolve(__dirname,'assets/app.ico'),
+    extraResource: ["input"] },
   makers,
   plugins: [
     new VitePlugin({
