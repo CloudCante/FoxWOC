@@ -8,6 +8,7 @@ import DownloadIcon from '@mui/icons-material/Download';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import DeleteIcon from '@mui/icons-material/Delete';
 import * as Settings from '../../input/settings.json';
+import ExcelJS from 'exceljs';
 
 function a11yProps(index) {
   return {
@@ -327,93 +328,77 @@ export default function WorkOrderChecker() {
   const exportSerials = async () => {
     const ts = new Date().toISOString().replace(/[:.]/g, '-');
 
-    const download = (filename, text) => {
-    const blob = new Blob([text], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.setAttribute('download', filename);
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    };
-
     // Separate CSV
     if (separateSerials.length > 0) {
         const sepRows = [['SN', 'PN'], ...separateSerials.map((sn) => [sn, config.partNumber])];
         const sepCsv = sepRows.map((r) => r.map(String).join(',')).join('\n');
 
-        await download(`separated_serials_${ts}.csv`, sepCsv);
+        downloadFile(`separated_serials_${ts}.csv`, sepCsv);
     }
     else{
         setSnack({ open: true, severity: 'info', msg: 'No separated serials to export' });
     }
     try {
-        if (!window.electronAPI?.readTemplateFile) {
-            console.warn('electronAPI.readTemplateFile not found');
-            setSnack({ open: true, severity: 'error', msg: 'Export failed: template not found' });
-            return;
-        }
 
         const bytes = await window.electronAPI.readTemplateFile();
-        const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-        const ab = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
+        const buffer = bytes instanceof Uint8Array ?
+          bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength):
+          bytes;
 
-        // Load + edit with XlsxPopulate (preserves styles, merges, widths, etc.)
-        const XlsxPopulateMod = await import('xlsx-populate/browser/xlsx-populate');
-        const XlsxPopulate = XlsxPopulateMod.default ?? XlsxPopulateMod;
+        const wb = new ExcelJS.Workbook();
+        await wb.xlsx.load(buffer);
 
-        const wb = await XlsxPopulate.fromDataAsync(ab);
-        const ws = wb.sheet(0); // first sheet
+        const ws = wb.worksheets[0];
 
-        ws.cell(Settings.pn_loc).value(String(config.partNumber ?? ''));
-        ws.cell(Settings.date_loc).value(String(config.date ?? ''));
-        ws.cell(Settings.cart_loc).value(String(config.cartNumber ?? ''));
-        ws.cell(Settings.dn_loc).value(String(config.deliveryNumber ?? ''));
+        ws.getCell(Settings.pn_loc).value = String(config.partNumber ?? '');
+        ws.getCell(Settings.date_loc).value = String(config.date ?? '');
+        ws.getCell(Settings.cart_loc).value = String(config.cartNumber ?? '');
+        ws.getCell(Settings.dn_loc).value = String(config.deliveryNumber ?? '');
 
         const shelfOffsets = Settings?.offsets ?? [7, 35, 64, 92];
         (scannedSerials ?? []).forEach((arr, shelfIdx) => {
             const startRow = shelfOffsets[shelfIdx] ?? shelfOffsets[0];
             (arr ?? []).forEach((sn, i) => {
-            ws.cell(`C${startRow + i}`).value(String(sn ?? ''));
+            ws.getCell(`C${startRow + i}`).value =String(sn ?? '');
             });
         });
 
         // Export — in browser this is a Blob; in Electron it still works like a Blob
-        const blob = await wb.outputAsync();
+        const buffer2 = await wb.xlsx.writeBuffer();
+        const blob = new Blob([buffer2],{
+          type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        });
 
-        // If you added a native Save As… IPC, prefer it:
-        if (window.electronAPI?.saveFile) {
-            const buf = Buffer.from(await blob.arrayBuffer()); // or new Uint8Array(...)
-            const res = await window.electronAPI.saveFile({
-            defaultPath: `scanned_serials_${ts}.xlsx`,
-            bytes: new Uint8Array(buf),
-            });
-            if (res?.canceled) {
-            setSnack({ open: true, severity: 'info', msg: 'Save canceled' });
-            return;
-            }
-        } else {
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `scanned_serials_${ts}.xlsx`;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            URL.revokeObjectURL(url);
-        }
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `scanned_serials_${ts}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
 
         setSnack({ open: true, severity: 'success', msg: 'Export complete' });
         } catch (err) {
-        console.error('Error preparing scanned XLSX (XlsxPopulate):', err);
-        setSnack({ open: true, severity: 'error', msg: 'Export failed: error preparing scanned XLSX' });
+        console.error('Error exporting XLSX:', err);
+        setSnack({ open: true, severity: 'error', msg: `Export failed: ${err.message}` });
         }
 
 
     //download(`scanned_serials_${ts}.csv`, scCsv);
     setSnack({ open: true, severity: 'success', msg: 'Files exported' });
+  };
+
+  const downloadFile = (filename,content) =>{
+    const blob = new Blob([content],{ type: 'text/csv;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   };
 
   const handleReset = () => {
@@ -538,7 +523,7 @@ export default function WorkOrderChecker() {
                           placeholder="Enter serial number..."
                           value={serialInput}
                           onChange={(e) => setSerialInput(e.target.value)}
-                          onKeyDown={(e) => e.key === 'Enter' && checkSerial(e)}
+                          //onKeyDown={(e) => e.key === 'Enter' && checkSerial(e)}
                           autoFocus
                         />
                       </Grid>
